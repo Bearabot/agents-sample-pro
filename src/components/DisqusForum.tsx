@@ -1,25 +1,89 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { MessageSquare, AlertCircle } from 'lucide-react';
 
 interface DisqusForumProps {
   theme?: 'dark' | 'light' | 'editorial';
 }
 
-export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  theme: string;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class DisqusErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  declare props: ErrorBoundaryProps;
+  declare state: ErrorBoundaryState;
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.warn('Disqus Forum Error Boundary caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      const isDark = this.props.theme === 'dark';
+      return (
+        <div className={`p-6 rounded-xl border ${isDark ? 'border-[#2a2e39] bg-[#181c27]' : 'border-gray-200 bg-white'} text-xs font-mono opacity-70`}>
+          Disqus forum unavailable in this environment.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export const DisqusForumContent: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
   const isDark = theme === 'dark';
   const isEditorial = theme === 'editorial';
   const [scriptFailed, setScriptFailed] = useState<boolean>(false);
 
   useEffect(() => {
-    // Define disqus_config as recommended by Disqus documentation
-    (window as any).disqus_config = function (this: any) {
-      try {
-        this.page.url = window.location.href;
-        this.page.identifier = 'tradingview-pro-forum';
-      } catch (e) {
-        // Guard against cross-origin iframe url access errors
+    // Suppress cross-origin "Script error." originating from disqus.com scripts in sandboxed environments
+    const handleScriptError = (event: ErrorEvent) => {
+      if (
+        event.message === 'Script error.' ||
+        (event.filename && event.filename.includes('disqus')) ||
+        !event.message
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setScriptFailed(true);
+        return true;
       }
     };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (event.reason && String(event.reason).includes('disqus')) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('error', handleScriptError, true);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    // Define disqus_config as recommended by Disqus documentation
+    try {
+      (window as any).disqus_config = function (this: any) {
+        try {
+          this.page.url = window.location.href;
+          this.page.identifier = 'tradingview-pro-forum';
+        } catch (e) {
+          // Guard against cross-origin iframe url access errors
+        }
+      };
+    } catch (e) {}
 
     // 1. Load Disqus Embed Script
     const embedSrc = 'https://aiagentdemo.disqus.com/embed.js';
@@ -35,7 +99,11 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
       embedScript.onerror = () => {
         setScriptFailed(true);
       };
-      (document.head || document.body).appendChild(embedScript);
+      try {
+        (document.head || document.body).appendChild(embedScript);
+      } catch (e) {
+        setScriptFailed(true);
+      }
     } else if ((window as any).DISQUS) {
       try {
         // Re-initialize Disqus if already loaded
@@ -64,8 +132,15 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
       countScript.onerror = () => {
         // Silently handle count script blocked by adblockers/CORS
       };
-      (document.head || document.body).appendChild(countScript);
+      try {
+        (document.head || document.body).appendChild(countScript);
+      } catch (e) {}
     }
+
+    return () => {
+      window.removeEventListener('error', handleScriptError, true);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
   }, []);
 
   const containerBorder = isDark ? 'border-[#2a2e39]' : isEditorial ? 'border-[#1A1A1A]' : 'border-[#e0e3eb]';
@@ -103,7 +178,7 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
         {scriptFailed && (
           <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-500 text-xs font-mono flex items-center gap-2 mt-4">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Disqus comments could not be loaded directly in this preview frame or may be blocked by content policies.</span>
+            <span>Disqus comments powered by Disqus (aiagentdemo.disqus.com). If blocked in preview frame, open in a new tab.</span>
           </div>
         )}
 
@@ -117,3 +192,9 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
     </section>
   );
 };
+
+export const DisqusForum: React.FC<DisqusForumProps> = (props) => (
+  <DisqusErrorBoundary theme={props.theme || 'dark'}>
+    <DisqusForumContent {...props} />
+  </DisqusErrorBoundary>
+);
