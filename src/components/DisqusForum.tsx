@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { MessageSquare } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { MessageSquare, AlertCircle } from 'lucide-react';
 
 interface DisqusForumProps {
   theme?: 'dark' | 'light' | 'editorial';
@@ -8,8 +8,19 @@ interface DisqusForumProps {
 export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
   const isDark = theme === 'dark';
   const isEditorial = theme === 'editorial';
+  const [scriptFailed, setScriptFailed] = useState<boolean>(false);
 
   useEffect(() => {
+    // Define disqus_config as recommended by Disqus documentation
+    (window as any).disqus_config = function (this: any) {
+      try {
+        this.page.url = window.location.href;
+        this.page.identifier = 'tradingview-pro-forum';
+      } catch (e) {
+        // Guard against cross-origin iframe url access errors
+      }
+    };
+
     // 1. Load Disqus Embed Script
     const embedSrc = 'https://aiagentdemo.disqus.com/embed.js';
     
@@ -21,16 +32,25 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
       embedScript.src = embedSrc;
       embedScript.setAttribute('data-timestamp', (+new Date()).toString());
       embedScript.async = true;
+      embedScript.onerror = () => {
+        setScriptFailed(true);
+      };
       (document.head || document.body).appendChild(embedScript);
     } else if ((window as any).DISQUS) {
-      // Re-initialize Disqus if already loaded
-      (window as any).DISQUS.reset({
-        reload: true,
-        config: function () {
-          this.page.identifier = 'tradingview-pro-forum';
-          this.page.url = window.location.href;
-        },
-      });
+      try {
+        // Re-initialize Disqus if already loaded
+        (window as any).DISQUS.reset({
+          reload: true,
+          config: function (this: any) {
+            this.page.identifier = 'tradingview-pro-forum';
+            try {
+              this.page.url = window.location.href;
+            } catch (e) {}
+          },
+        });
+      } catch (e) {
+        console.warn('Disqus reset error handled:', e);
+      }
     }
 
     // 2. Load Disqus Count Script
@@ -39,8 +59,11 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
     if (!countScript) {
       countScript = document.createElement('script');
       countScript.id = countScriptId;
-      countScript.src = '//aiagentdemo.disqus.com/count.js';
+      countScript.src = 'https://aiagentdemo.disqus.com/count.js';
       countScript.async = true;
+      countScript.onerror = () => {
+        // Silently handle count script blocked by adblockers/CORS
+      };
       (document.head || document.body).appendChild(countScript);
     }
   }, []);
@@ -76,6 +99,13 @@ export const DisqusForum: React.FC<DisqusForumProps> = ({ theme = 'dark' }) => {
 
         {/* Disqus Embed Container as requested */}
         <div id="disqus_thread" className="min-h-[220px]" />
+
+        {scriptFailed && (
+          <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-500 text-xs font-mono flex items-center gap-2 mt-4">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>Disqus comments could not be loaded directly in this preview frame or may be blocked by content policies.</span>
+          </div>
+        )}
 
         <noscript>
           Please enable JavaScript to view the{' '}
