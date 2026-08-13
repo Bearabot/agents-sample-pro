@@ -15,6 +15,7 @@ import { AssetDetailModal } from './components/AssetDetailModal';
 import { SearchModal } from './components/SearchModal';
 import { AiMarketAssistantModal } from './components/AiMarketAssistantModal';
 import { PaperPortfolioDrawer } from './components/PaperPortfolioDrawer';
+import { DisqusForum } from './components/DisqusForum';
 import { INITIAL_MARKET_ASSETS } from './data/marketData';
 import { MarketAsset, MarketCategory, MarketRegion, PaperTradePosition } from './types';
 
@@ -296,6 +297,9 @@ export default function App() {
             <SectorHeatmap assets={assets} onSelectAsset={setSelectedAssetForDetail} theme={theme} />
           </div>
         )}
+
+        {/* Community Discussion Forum */}
+        <DisqusForum theme={theme} />
       </main>
 
       {/* Modals & Drawers */}
